@@ -1,7 +1,4 @@
 -module(vberl).
--author('nicolas.michel.lava@gmail.com').
-
-%%
 
 -export([new/0,
 	 startOfLine/1,
@@ -33,20 +30,21 @@
 	 searchMultiline/1,
 	 searchMultiline/2,
 	 multiple/2,
-	 alt/1,
-	 alt/2,
+	 alt/1, % "or" is a reserved keyword.
+	 alt/2, % "or" is a reserved keyword.
 	 beginCapture/1,
-	 endCapture/1
+	 endCapture/1,
+	 source/1,
+	 regex/1
 	]).
--export([add/2,
-	 to_string/1]).
 
 %%
 
 -record(vexpr, {prefixes = "",
 		suffixes = "",
 		source = "",
-		modifiers = [],
+		compile_modifiers = [],
+		run_modifiers = [],
 		re
 	       }).
 
@@ -99,10 +97,10 @@ somethingBut(Expr, Value) ->
     add(Expr,  "(?:[^" ++ sanitize(Value) ++ "]+)").
 
 replace(Expr, Source, Value) ->
-    re:replace(Source, Expr#vexpr.re, Value).
+    re:replace(Source, Expr#vexpr.re, Value, [{return, list} | Expr#vexpr.run_modifiers]).
 
 match(Expr, Value) ->
-    case re:run(Value, Expr#vexpr.re) of
+    case re:run(Value, Expr#vexpr.re, Expr#vexpr.run_modifiers) of
 	{match, _} ->
 	    true;
 	nomatch ->
@@ -137,45 +135,56 @@ buildRange_([], Acc) ->
     Acc.
 
 withAnyCase(Expr) ->
-    modifier_(Expr, caseless, true).
+    modifier_(Expr, compile_modifiers, caseless, true).
 
 withAnyCase(Expr, Flag) ->
-    modifier_(Expr, caseless, Flag).
+    modifier_(Expr, compile_modifiers, caseless, Flag).
 
 searchGlobal(Expr) -> %% same role as stopAtFirst, but reversed
     searchGlobal(Expr, true).
 
 searchGlobal(Expr, Flag) -> %% same role as stopAtFirst, but reversed
-    modifier_(Expr, global, Flag).
+    modifier_(Expr, run_modifiers, global, Flag).
 
 searchMultiline(Expr) -> %% same role as searchOneLine, but reversed
     searchMultiline(Expr, true).
 
 searchMultiline(Expr, Flag) -> %% same role as searchOneLine, but reversed
-    modifier_(Expr, multiline, Flag).
+    modifier_(Expr, compile_modifiers, multiline, Flag).
 
-modifier_(Expr, Modifier, true) ->
-    M0 = Expr#vexpr.modifiers,
-    M1 = M0 -- [Modifier], % If modifier already present, remove it; if not, do nothing.
-    M2 = M1 ++ [Modifier], % Add modifier.
-    add(Expr#vexpr{modifiers = M2}, "");
-modifier_(Expr, Modifier, false) ->
-    add(Expr#vexpr{modifiers = Expr#vexpr.modifiers -- [Modifier]}, "").
+modifier_(Expr, compile_modifiers, Modifier, true) ->
+    M0 = Expr#vexpr.compile_modifiers,
+    M1 = M0 -- [Modifier], % If modifier already present, remove it; if not, do nothing
+    M2 = M1 ++ [Modifier], % Then, add it.
+    add(Expr#vexpr{compile_modifiers = M2}, "");
+modifier_(Expr, compile_modifiers, Modifier, false) ->
+    add(Expr#vexpr{compile_modifiers = Expr#vexpr.compile_modifiers -- [Modifier]}, "");
+modifier_(Expr, run_modifiers, Modifier, true) ->
+    M0 = Expr#vexpr.run_modifiers,
+    M1 = M0 -- [Modifier], % If modifier already present, remove it; if not, do nothing
+    M2 = M1 ++ [Modifier], % Then, add it.
+    add(Expr#vexpr{run_modifiers = M2}, "");
+modifier_(Expr, run_modifiers, Modifier, false) ->
+    add(Expr#vexpr{run_modifiers = Expr#vexpr.run_modifiers -- [Modifier]}, "").
 
 multiple(Expr, Value = [C | _Tail]) when C == $*; C == $+ ->
     add(Expr, sanitize(Value));
 multiple(Expr, Value) ->
-    %% Javascript/Clojure and C++/Java differ on this point, the formers suffixing while the latters prefixing. Follow Javascript implementation.
+    %% Javascript/Clojure and C++/Java differ on this point, the formers suffixing
+    %% while the latters prefixing.
+    %% Follow Javascript implementation.
+    %% 
     add(Expr, sanitize(Value ++ "+")).
 
-%% "or" is a reserved keyword.
 alt(Expr) ->
-    %% Javascript/Clojure and C++/Java differ on this point, the formers always add parenthesis, the latters check the presence of parenthesis. Follow Javascript implementation.
+    %% Javascript/Clojure and C++/Java differ on this point, the formers always add parenthesis,
+    %% the latters check the presence of parenthesis.
+    %% Follow Javascript implementation.
+    %% 
     E2 = Expr#vexpr{prefixes = Expr#vexpr.prefixes ++ "(?:",
 		    suffixes = ")" ++ Expr#vexpr.suffixes},
     add(E2, ")|(?:").
 
-%% "or" is a reserved keyword.
 alt(Expr, Value) ->
     then(alt(Expr), Value).
 
@@ -187,6 +196,12 @@ endCapture(Expr) ->
     E2 = Expr#vexpr{suffixes = string:substr(Expr#vexpr.suffixes, 1, length(Expr#vexpr.suffixes)-1)},
     add(E2, ")").
 
+source(Expr) ->
+    Expr#vexpr.source.
+
+regex(Expr) ->
+    Expr#vexpr.re.
+
 %%
 
 sanitize(Value) ->
@@ -196,9 +211,6 @@ add(Expr, Value) when is_list(Value) ->
     compile(Expr#vexpr{source = Expr#vexpr.source ++ Value}).
 
 compile(Expr) ->
-    {ok, RegExp} = re:compile(Expr#vexpr.prefixes ++ Expr#vexpr.source ++ Expr#vexpr.suffixes, Expr#vexpr.modifiers),
+    {ok, RegExp} = re:compile(Expr#vexpr.prefixes ++ Expr#vexpr.source ++ Expr#vexpr.suffixes, Expr#vexpr.compile_modifiers),
     Expr#vexpr{re = RegExp}.
-
-to_string(Expr) ->
-    Expr#vexpr.source.
 

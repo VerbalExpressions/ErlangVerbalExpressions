@@ -112,9 +112,6 @@ test_multiline() ->
     false = vberl:match(VE2, "Ping \n Pong \n Ping"),
     true = vberl:match(VE2, "Pong \n Pong \n Ping").
 
-%% test_replace() ->
-%%     .
-
 test_case_sensitive() ->
     VE = vberl:endOfLine(vberl:find(vberl:startOfLine(vberl:new()),
 				    "THOR")),
@@ -145,6 +142,20 @@ test_word() ->
     false = vberl:match(VE, "a-c"),
     false = vberl:match(VE, "a c"),
     false = vberl:match(VE, "a!c").
+
+test_replace() ->
+    VE1 = vberl:find(vberl:new(), "red"),
+    "We have a blue house" = vberl:replace(VE1, "We have a red house", "blue"),
+
+    VE2 = vberl:find(vberl:alt(VE1), "blue"),
+    true = "We have a cyan house, a green car and a red bull" == vberl:replace(VE2, "We have a cyan house, a blue car and a red bull", "green"), % replace "blue"
+    false = "We have a cyan house, a green car and a green bull" == vberl:replace(VE2, "We have a cyan house, a blue car and a red bull", "green"), % does not replace "red"
+
+    VE3 = vberl:searchGlobal(VE2),
+    true = "We have a cyan house, a green car and a green bull" == vberl:replace(VE3, "We have a cyan house, a blue car and a red bull", "green"), % replace both
+
+    VE4 = vberl:withAnyCase(VE3),
+    true = "We have a cyan house, a green car and a green bull" == vberl:replace(VE4, "We have a cyan house, a bLuE car and a rEd bull", "green").
 
 %% Advanced tests
 %%
